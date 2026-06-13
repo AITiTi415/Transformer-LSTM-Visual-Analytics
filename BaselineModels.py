@@ -2,11 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# ==========================================
-# Baseline A: CNN-LSTM 经典多模态时序网络
-# 核心逻辑：先利用 1D-CNN 提取局部特征（如油门、刹车的瞬间联动），
-# 然后串联双向 LSTM 捕捉长程演变规律。
-# ==========================================
 class CNNLSTMPredictor(nn.Module):
     def __init__(self, input_dim=5, num_abilities=8):
         super(CNNLSTMPredictor, self).__init__()
@@ -51,12 +46,6 @@ class CNNLSTMPredictor(nn.Module):
         logits = self.fc_heads(context_vector)
         return F.softmax(logits, dim=1)
 
-
-# ==========================================
-# Baseline B: TCN (Temporal Convolutional Network) 前沿时序卷积网络
-# 核心逻辑：纯粹依靠不同空洞率（Dilation）的因果或扩张卷积来扩大感受野，
-# 具有训练并行度高、长序列记忆好的特点。
-# ==========================================
 class TCNPredictor(nn.Module):
     def __init__(self, input_dim=5, num_abilities=8):
         super(TCNPredictor, self).__init__()

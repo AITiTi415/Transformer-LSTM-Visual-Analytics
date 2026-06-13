@@ -114,7 +114,7 @@ def plot_scene_attention():
     plt.savefig('outputs/Fig2_Scene_Attention.pdf')
     plt.savefig('outputs/Fig2_Scene_Attention.png', dpi=300)
     plt.close()
-    print(">>> ✅ 图2 - 高级学术折叠热力图出图完毕！")
+    print(">>>  图2 - 热力图出图完毕！")
 
 # ==========================================
 def run_shap_explainability():

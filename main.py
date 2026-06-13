@@ -1,5 +1,4 @@
 import os
-# 【必加】解决 Anaconda 环境下 Intel OpenMP 库重复加载报错的问题
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 import torch
@@ -8,9 +7,10 @@ import torch.optim as optim
 import numpy as np
 import pandas as pd
 
-# 加载模块和双分支大脑模型
+
 from dataloader import get_dataloaders
 from models import SingleScenePredictor, GlobalSceneAttention
+
 
 def custom_driving_loss(predictions, targets_dummy, inputs_seq, scene_ids):
     """
@@ -29,23 +29,24 @@ def custom_driving_loss(predictions, targets_dummy, inputs_seq, scene_ids):
         brake_max = torch.max(seq[:, 2])
         sge_mean = torch.mean(seq[:, 3])  
         gte_mean = torch.mean(seq[:, 4])  
+
         
         # 0. 专注注意力 (SGE越高，注视越乱，指数级扣分)
         pseudo_targets[i, 0] = torch.exp(-sge_mean * 3.0) 
         
-        # 1. 全面注意力 
+        # 1. 全面注意力 (GTE越高越好，直接乘方放大)
         pseudo_targets[i, 1] = gte_mean * 5.0 
         
-        # 2. 应急响应力 
+        # 2. 应急响应力 (刹车力度平方放大，体现极端反应)
         pseudo_targets[i, 2] = (brake_max ** 2) * 3.0 
         
-        # 3. 记忆学习力 
+        # 3. 记忆学习力 (操作越平稳越好，方差一大直接归零)
         pseudo_targets[i, 3] = torch.exp(-(steer_var + throttle_var) * 8.0)
         
-        # 4. 执行力 
+        # 4. 执行力 (油门刹车果断程度，平方放大)
         pseudo_targets[i, 4] = ((throttle_mean + brake_max) ** 2) * 2.0
         
-        # 5. 空间认知能力 
+        # 5. 空间认知能力 (方向盘乱打？得分直接降维打击)
         pseudo_targets[i, 5] = torch.exp(-steer_var * 15.0)
         
         # 6 & 7: 动作抑制 vs 冲动行为
@@ -55,6 +56,7 @@ def custom_driving_loss(predictions, targets_dummy, inputs_seq, scene_ids):
         else:
             throttle_while_turning = torch.tensor(0.0)
             
+        # 违规猛踩油门？冲动得分平方级飙升！
         impulse_score = (throttle_while_turning ** 2) * 15.0
         inhibition_score = torch.exp(-impulse_score) 
         
@@ -67,6 +69,7 @@ def custom_driving_loss(predictions, targets_dummy, inputs_seq, scene_ids):
     # 均方误差逼迫模型学习这套极端的评分标准
     loss = F.mse_loss(predictions, pseudo_targets)
     return loss
+
 
 
 def train_model():
@@ -83,7 +86,7 @@ def train_model():
     epochs = 20
     os.makedirs('checkpoints', exist_ok=True)
 
-    # 初始化一个空列表，用来记录每一个 Epoch 的 Loss
+
     history_losses = [] 
 
     print(">>> [开始] 重新训练网络...")
@@ -116,7 +119,7 @@ def train_model():
             
         avg_loss = total_train_loss / len(train_loader)
         
-        # 【新增 2/3】：把算好的平均 loss 塞进列表里保存
+
         history_losses.append(avg_loss)
         
         print(f"Epoch [{epoch+1}/{epochs}] | Loss: {avg_loss:.4f}")
@@ -124,17 +127,18 @@ def train_model():
     torch.save(base_model.state_dict(), 'checkpoints/Driving_Main_Brain.pth')
     torch.save(attention_model.state_dict(), 'checkpoints/Global_Attention.pth')
     
-    # 【新增 3/3】：训练彻底结束后，把整个 loss 列表保存为 .npy 数据文件！
+
     np.save('checkpoints/training_loss.npy', np.array(history_losses))
     
     print("\n[完成] 模型训练结束，权重和 Loss 曲线数据已覆盖保存。")
+
 
 def generate_radar_chart(person_id=0, verbose=True):
     if verbose:
         print(f"\n>>> [画像生成] 正在提取测试人员 {person_id} 的全局认知图谱...")
         
     features = np.load('data/AllData_Process.npy')
-
+    
     num_subjects = features.shape[0] // 35 
     
     person_indices = [person_id + s * num_subjects for s in range(35)]
@@ -172,7 +176,7 @@ def generate_radar_chart(person_id=0, verbose=True):
 
 
 def evaluate_model_metrics():
-    print("\n>>>正在计算模型核心指标 (KL散度、余弦相似度、MSE、MAE)")
+    print("\n>>>正在计算模型核心指标 (包含分布误差与任务级高风险检测可靠性)")
     features = np.load('data/AllData_Process.npy')
     num_subjects = features.shape[0] // 35 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -182,6 +186,9 @@ def evaluate_model_metrics():
     model.eval()
     
     all_mse, all_mae, all_cos, all_kl = [], [], [], []
+    
+    all_impulse_preds = []
+    all_impulse_targets = []
     
     with torch.no_grad():
         for person_id in range(num_subjects):
@@ -225,7 +232,7 @@ def evaluate_model_metrics():
 
             targets = F.softmax(pseudo_targets * 4.0, dim=1)
             
-            # 核心学术指标计算
+            # 核心学术分布指标计算
             mse = F.mse_loss(preds, targets).item()
             mae = F.l1_loss(preds, targets).item()
             cos_sim = F.cosine_similarity(preds, targets).mean().item()
@@ -236,18 +243,59 @@ def evaluate_model_metrics():
             all_cos.append(cos_sim)
             all_kl.append(kl_div)
             
+            # ------------------------------------------
+            # [新增] 提取冲动行为概率(dim=7)
+            # ------------------------------------------
+            all_impulse_preds.append(preds[:, 7].cpu().numpy())
+            all_impulse_targets.append(targets[:, 7].cpu().numpy())
+            
+    # 合并任务级分析数据
+    preds_impulse = np.concatenate(all_impulse_preds)
+    targets_impulse = np.concatenate(all_impulse_targets)
+            
     print("\n" + "="*50)
-    print("学术评估指标")
+    print("基础学术评估指标 (Distributional Metrics)")
     print("="*50)
     print(f"  [1] 余弦相似度 (Cosine Similarity) : {np.mean(all_cos):.4f}")
     print(f"  [2] KL 散度 (KL Divergence)       : {np.mean(all_kl):.4f}")
     print(f"  [3] 均方误差 (MSE)                : {np.mean(all_mse):.4f}")
     print(f"  [4] 平均绝对误差 (MAE)            : {np.mean(all_mae):.4f}")
+    
+    print("\n" + "="*50)
+    print("任务级预警可靠性分析 (Task-Level Warning Reliability)")
+    print("="*50)
+    
+    # 动态阈值敏感性分析
+    thresholds = [0.10, 0.15, 0.20]
+    for t in thresholds:
+        # 将概率转化为二分类预警信号
+        pred_labels = (preds_impulse > t).astype(int)
+        true_labels = (targets_impulse > t).astype(int)
+        
+        tp = np.sum((pred_labels == 1) & (true_labels == 1))
+        fp = np.sum((pred_labels == 1) & (true_labels == 0))
+        fn = np.sum((pred_labels == 0) & (true_labels == 1))
+        tn = np.sum((pred_labels == 0) & (true_labels == 0))
+        
+        accuracy = (tp + tn) / (tp + fp + fn + tn + 1e-9)
+        precision = tp / (tp + fp + 1e-9)
+        recall = tp / (tp + fn + 1e-9)
+        f1 = 2 * precision * recall / (precision + recall + 1e-9)
+        
+        print(f"  阈值 (Threshold) = {t:.2f}:")
+        print(f"    - 高风险检测准确率 (Accuracy) : {accuracy:.4f}")
+        print(f"    - 预警精确率 (Precision)      : {precision:.4f}")
+        print(f"    - 预警召回率 (Recall)         : {recall:.4f}")
+        print(f"    - 综合 F1-Score               : {f1:.4f}\n")
     print("="*50 + "\n")
 
+
+# ==========================================
+# 启动入口 (批量导出)
+# ==========================================
 if __name__ == "__main__":
     # 让模型学习新的打分机制
-    train_model() 
+    # train_model() 
     
     evaluate_model_metrics()
     
