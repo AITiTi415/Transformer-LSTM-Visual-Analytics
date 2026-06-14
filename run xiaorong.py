@@ -17,6 +17,7 @@ def train_and_eval_ablation(model_name, base_model, train_loader, device, epochs
     print(f"[启动消融实验] 当前网络变体: {model_name}")
     print("="*60)
     
+    # 【新增】：为了输出最终画像，我们需要给每个变体也配一个注意力聚合器
     attention_model = GlobalSceneAttention(num_abilities=8).to(device)
     
     # 联合优化

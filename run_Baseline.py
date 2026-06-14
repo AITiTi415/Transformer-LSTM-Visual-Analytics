@@ -1,4 +1,5 @@
 import os
+# 解决 Anaconda 环境下 Intel OpenMP 库重复加载报错的问题
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 import torch
@@ -13,7 +14,9 @@ from dataloader import get_dataloaders
 # 导入前一步为您编写的对比模型
 from BaselineModels import CNNLSTMPredictor, TCNPredictor
 
-
+# =========================================================================
+# 核心对齐：复刻 main.py 的铁血纪委损失函数 (指数惩罚与乘方放大)，确保对比绝对公平
+# =========================================================================
 def custom_driving_loss(predictions, inputs_seq):
     """
     inputs_seq 维度: (Batch, 94, 5) -> [0:方向盘, 1:油门, 2:刹车, 3:SGE, 4:GTE]
@@ -62,6 +65,10 @@ def custom_driving_loss(predictions, inputs_seq):
     targets = F.softmax(pseudo_targets * 4.0, dim=1)
     return F.mse_loss(predictions, targets)
 
+
+# =========================================================================
+# 核心对齐：复刻 main.py 的端到端评估模块，计算四大核心学术指标
+# =========================================================================
 def evaluate_baseline_metrics(model, model_name, data_path='data/AllData_Process.npy'):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
@@ -133,6 +140,10 @@ def evaluate_baseline_metrics(model, model_name, data_path='data/AllData_Process
     }
     return metrics
 
+
+# =========================================================================
+# 训练主循环
+# =========================================================================
 def run_experiments():
     data_path = 'data/AllData_Process.npy'
     print(">>> [启动] 正在加载【人员级】群体常模数据底座...")
@@ -195,13 +206,19 @@ def run_experiments():
         torch.save(model.state_dict(), save_path)
         print(f"  -> 权重已成功固化至: {save_path}")
 
+    # =========================================================================
+    # 终极呈现：打印标准的 SCI 级别论文对比实验结果表
+    # =========================================================================
     print("\n" + "="*70)
     print(" SCI 论文对比实验结果矩阵 (Baseline Results)")
     print("="*70)
     df_results = pd.DataFrame(final_results)
     print(df_results.to_string(index=False))
     print("="*70 + "\n")
-
+    
+    # 自动保存为 CSV 供画图使用
+    # df_results.to_csv("对比实验结果.csv", index=False, encoding='utf-8-sig')
+    # print(">>> 矩阵结果已导出至 '对比实验结果.csv'，可直接用于绘制对比柱状图。")
 
 if __name__ == "__main__":
     run_experiments()
