@@ -11,13 +11,24 @@ from xiaorong_models import AblationPredictor
 # 引入基础模型、全局注意力聚合器和 Loss 函数
 from models import SingleScenePredictor, GlobalSceneAttention
 from main import custom_driving_loss
+def set_global_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed) # 如果使用多GPU
+    # 保证cuDNN的确定性行为
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+# 立即调用生效
+set_global_seed(42)
 
 def train_and_eval_ablation(model_name, base_model, train_loader, device, epochs=20):
     print(f"\n" + "="*60)
     print(f"[启动消融实验] 当前网络变体: {model_name}")
     print("="*60)
     
-    # 【新增】：为了输出最终画像，我们需要给每个变体也配一个注意力聚合器
     attention_model = GlobalSceneAttention(num_abilities=8).to(device)
     
     # 联合优化

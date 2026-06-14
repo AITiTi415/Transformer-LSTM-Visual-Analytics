@@ -1,5 +1,4 @@
 import os
-# 【必加】解决 Anaconda 环境下 Intel OpenMP 库重复加载报错的问题
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 import torch
@@ -8,13 +7,22 @@ import torch.optim as optim
 import numpy as np
 import pandas as pd
 
-# 导入我们重写好的数据加载模块和双分支大脑模型
+
 from dataloader import get_dataloaders
 from models import SingleScenePredictor, GlobalSceneAttention
+def set_global_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed) # 如果使用多GPU
+    # 保证cuDNN的确定性行为
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-# ==========================================
-# 模块一：铁血纪委法官 (引入指数级惩罚，打破平均主义！)
-# ==========================================
+# 立即调用生效
+set_global_seed(42)
+
 def custom_driving_loss(predictions, targets_dummy, inputs_seq, scene_ids):
     """
     inputs_seq 维度: (Batch, 94, 5) -> [0:方向盘, 1:油门, 2:刹车, 3:SGE, 4:GTE]
@@ -32,10 +40,7 @@ def custom_driving_loss(predictions, targets_dummy, inputs_seq, scene_ids):
         brake_max = torch.max(seq[:, 2])
         sge_mean = torch.mean(seq[:, 3])  
         gte_mean = torch.mean(seq[:, 4])  
-        
-        # ==========================================
-        # 核心修改：使用指数 (exp) 和乘方 (**2) 强行拉开个体差距！
-        # ==========================================
+
         
         # 0. 专注注意力 (SGE越高，注视越乱，指数级扣分)
         pseudo_targets[i, 0] = torch.exp(-sge_mean * 3.0) 
@@ -77,12 +82,7 @@ def custom_driving_loss(predictions, targets_dummy, inputs_seq, scene_ids):
     return loss
 
 
-# ==========================================
-# 模块二：端到端人员级训练大循环
-# ==========================================
-# ==========================================
-# 模块二：端到端人员级训练大循环
-# ==========================================
+
 def train_model():
     print(">>> [启动] 正在加载【人员级】多模态驾驶数据底座...")
     train_loader, val_loader = get_dataloaders('data/AllData_Process.npy', batch_size=4)
@@ -97,7 +97,7 @@ def train_model():
     epochs = 20
     os.makedirs('checkpoints', exist_ok=True)
 
-    # 【新增 1/3】：初始化一个空列表，用来记录每一个 Epoch 的 Loss
+
     history_losses = [] 
 
     print(">>> [开始] 重新训练网络...")
@@ -130,7 +130,7 @@ def train_model():
             
         avg_loss = total_train_loss / len(train_loader)
         
-        # 【新增 2/3】：把算好的平均 loss 塞进列表里保存
+
         history_losses.append(avg_loss)
         
         print(f"Epoch [{epoch+1}/{epochs}] | Loss: {avg_loss:.4f}")
@@ -138,25 +138,18 @@ def train_model():
     torch.save(base_model.state_dict(), 'checkpoints/Driving_Main_Brain.pth')
     torch.save(attention_model.state_dict(), 'checkpoints/Global_Attention.pth')
     
-    # 【新增 3/3】：训练彻底结束后，把整个 loss 列表保存为 .npy 数据文件！
+
     np.save('checkpoints/training_loss.npy', np.array(history_losses))
     
     print("\n[完成] 模型训练结束，权重和 Loss 曲线数据已覆盖保存。")
 
 
-# ==========================================
-# 模块三：终极生成 (带静音控制的画像提取)
-# ==========================================
 def generate_radar_chart(person_id=0, verbose=True):
     if verbose:
         print(f"\n>>> [画像生成] 正在提取测试人员 {person_id} 的全局认知图谱...")
         
     features = np.load('data/AllData_Process.npy')
     
-    # ==========================================
-    # 【动态解耦】自动计算当前底座中的总人数
-    # 总数据行数 / 35个固定场景 = 实际测试人数
-    # ==========================================
     num_subjects = features.shape[0] // 35 
     
     person_indices = [person_id + s * num_subjects for s in range(35)]
@@ -193,12 +186,6 @@ def generate_radar_chart(person_id=0, verbose=True):
     return final_scores, attn_weights
 
 
-# ==========================================
-# 【纯新增代码】：完全不干扰原逻辑的指标计算模块
-# ==========================================
-# ==========================================
-# 【替换代码】：包含学术分布指标与任务级预警可靠性指标计算
-# ==========================================
 def evaluate_model_metrics():
     print("\n>>>正在计算模型核心指标 (包含分布误差与任务级高风险检测可靠性)")
     features = np.load('data/AllData_Process.npy')
@@ -211,9 +198,6 @@ def evaluate_model_metrics():
     
     all_mse, all_mae, all_cos, all_kl = [], [], [], []
     
-    # ------------------------------------------
-    # [新增] 收集冲动行为(节点7)的预测与目标概率，用于任务级评价
-    # ------------------------------------------
     all_impulse_preds = []
     all_impulse_targets = []
     
@@ -330,7 +314,7 @@ if __name__ == "__main__":
         base_features = np.load('data/AllData_Process.npy')
         total_subjects = base_features.shape[0] // 35
     except FileNotFoundError:
-        print("❌ 错误：未找到 data/AllData_Process.npy！请确保路径正确。")
+        print(" 错误：未找到 data/AllData_Process.npy！请确保路径正确。")
         exit()
         
     print(f"\n>>> [批量生成] 正在提取全部 {total_subjects} 名测试人员的雷达图谱数据，请稍候...")
